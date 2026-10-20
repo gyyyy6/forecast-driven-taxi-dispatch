@@ -1,0 +1,81 @@
+project:
+  name: nyc-hvfhv-demand-dispatch
+  seed: 42
+  # 原始时间戳为纽约本地时间（naive），不做时区转换以避免 DST 歧义
+  timezone: America/New_York
+
+paths:
+  raw_dir: data/raw/hvfhv
+  zone_lookup: data/raw/taxi_zone_lookup.csv
+  zone_centroids: data/raw/taxi_zone_centroids.csv
+  panel: data/processed/demand_panel.parquet
+  features: data/processed/features.parquet
+  feature_list: data/processed/feature_list.json
+  adjacency: data/processed/adjacency.npz
+  model_dir: data/processed/models
+  prediction_dir: data/processed/predictions
+  simulation_dir: data/processed/simulation
+  log_dir: data/processed/logs
+
+data:
+  start: "2024-01-01"
+  end: "2025-01-01"
+  freq: "15min"
+  zone_min: 1
+  zone_max: 263
+  drop_unknown_zones: true
+
+split:
+  # 严格按时间顺序切分，禁止 shuffle / 随机划分
+  train: 0.70
+  val: 0.15
+  test: 0.15
+
+features:
+  lags: [1, 2, 4, 8, 96, 672]
+  rolling_windows: [4, 96]
+  calendar: [hour, minute, dow, is_weekend, is_holiday]
+  cyclic: true
+
+lgbm:
+  objective: regression_l1
+  metric: mae
+  n_estimators: 2000
+  learning_rate: 0.05
+  num_leaves: 63
+  min_child_samples: 50
+  subsample: 0.8
+  subsample_freq: 1
+  colsample_bytree: 0.8
+  reg_alpha: 0.0
+  reg_lambda: 1.0
+  n_jobs: -1
+  # cpu / gpu：gpu 需要 GPU 版 LightGBM；成员 C 建议先用 cpu
+  device: cpu
+  early_stopping_rounds: 100
+
+stgnn:
+  seq_len: 12          # 3 小时历史
+  pred_len: 1          # 预测未来 15 分钟
+  batch_size: 16       # 1660 Ti 6G 也安全；4060 可尝试 32
+  hidden_channels: 32
+  epochs: 50
+  lr: 0.001
+  weight_decay: 0.0001
+  num_workers: 0       # Windows 下建议 0
+  device: cuda
+  grad_clip: 5.0
+
+simulation:
+  start: "2024-12-01 00:00"
+  end: "2024-12-01 06:00"
+  n_vehicles: 200
+  speed_kmh: 25
+  service_time_min: 12
+  max_wait_min: 30
+  dispatch_interval_min: 15
+  seed: 42
+
+visualization:
+  prediction_path: data/processed/predictions/pred_test.parquet
+  simulation_path: data/processed/simulation/sim_results.parquet

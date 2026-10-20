@@ -1,0 +1,25 @@
+# ---- 核心（三台机器都需要）----
+pandas>=2.2,<3.0
+numpy>=1.26,<3.0
+pyarrow>=15.0
+scikit-learn>=1.4
+pyyaml>=6.0
+tqdm>=4.66
+
+# ---- 预测基线 ----
+lightgbm>=4.3
+
+# ---- 仿真 ----
+simpy>=4.1
+
+# ---- 可视化 ----
+streamlit>=1.35
+plotly>=5.20
+folium>=0.16
+streamlit-folium>=0.20
+
+# ---- 分析 / 开发 ----
+matplotlib>=3.8
+jupyterlab>=4.1
+pytest>=8.0
+holidays>=0.50

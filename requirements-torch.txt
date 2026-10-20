@@ -1,0 +1,7 @@
+# 仅成员 A（RTX 4060 8G）需要。
+# 强烈建议使用 Python 3.11（PyTorch / PyG 轮子最完整）。
+# 先按 https://pytorch.org/get-started/locally/ 选择 CUDA 12.x 版本安装 torch，
+# 再执行本文件。默认训练脚本只依赖 torch，不强制 PyG。
+torch>=2.2
+# 可选：后续若改用 PyG 图卷积
+# torch-geometric>=2.5
