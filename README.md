@@ -41,6 +41,17 @@ data/raw/taxi_zone_lookup.csv
 data/raw/taxi_zone_centroids.csv
 ```
 
+> 质心文件需包含 `LocationID` + (`lat`,`lon`) 或 (`X`,`Y`)。若 TLC 只提供 shapefile，可用 geopandas 生成：
+>
+> ```python
+> import geopandas as gpd, pandas as pd
+> gdf = gpd.read_file("data/raw/taxi_zones/taxi_zones.shp").to_crs(4326)
+> c = gdf.geometry.centroid
+> pd.DataFrame({"LocationID": gdf["LocationID"], "lat": c.y, "lon": c.x}).to_csv(
+>     "data/raw/taxi_zone_centroids.csv", index=False
+> )
+> ```
+
 **`data/` 已被 `.gitignore` 忽略，任何数据、模型权重都不允许提交到 Git。**
 
 ## 3. 快速开始
@@ -149,3 +160,21 @@ streamlit run src/visualization/app.py
 | 8 | Forecast-driven 预调度与对比实验 |
 | 9 | Streamlit 看板、端到端联调 |
 | 10 | 报告、答辩材料、代码整理 |
+
+## 9. 推送到 GitHub
+
+在 GitHub 网页新建**空仓库**（不要勾选自动生成 README），然后：
+
+```powershell
+git remote add origin https://github.com/<你的用户名>/<仓库名>.git
+git push -u origin main
+git push origin dev
+```
+
+首次推送会要求登录。也可使用 SSH：
+
+```powershell
+ssh-keygen -t ed25519 -C "your_email@example.com"
+# 将 ~/.ssh/id_ed25519.pub 添加到 GitHub → Settings → SSH and GPG keys
+git remote add origin git@github.com:<你的用户名>/<仓库名>.git
+```
