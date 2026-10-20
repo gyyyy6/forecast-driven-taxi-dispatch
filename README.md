@@ -36,16 +36,19 @@ HVFHV 原始数据
 下载后将原始 `.parquet` 放到：
 
 ```text
-data/raw/hvfhv/*.parquet
+data/raw/fhvhv_tripdata_2023-01.parquet
 data/raw/taxi_zone_lookup.csv
-data/raw/taxi_zone_centroids.csv
+data/raw/taxi_zones.shp  (+ .dbf/.shx/.prj)
 ```
+
+> 默认配置对应 2023-01 单月数据，时间区间为 [2023-01-01, 2023-02-01)。
+> shapefile 需将 .shp/.dbf/.shx/.prj 放在同一目录；若解压到子目录，请同步修改 `paths.zone_shapefile`。
 
 > 质心文件需包含 `LocationID` + (`lat`,`lon`) 或 (`X`,`Y`)。若 TLC 只提供 shapefile，可用 geopandas 生成：
 >
 > ```python
 > import geopandas as gpd, pandas as pd
-> gdf = gpd.read_file("data/raw/taxi_zones/taxi_zones.shp").to_crs(4326)
+> gdf = gpd.read_file("data/raw/taxi_zones.shp").to_crs(4326)
 > c = gdf.geometry.centroid
 > pd.DataFrame({"LocationID": gdf["LocationID"], "lat": c.y, "lon": c.x}).to_csv(
 >     "data/raw/taxi_zone_centroids.csv", index=False
@@ -69,6 +72,9 @@ pip install -r requirements-torch.txt
 
 # 2) 生成需求面板
 python -m src.data.make_dataset --config configs/default.yaml
+
+# 2.1) 提取小样本（成员 B/C）
+python -m src.data.make_sample --config configs/default.yaml
 
 # 3) 特征工程
 python -m src.features.build_features --config configs/default.yaml

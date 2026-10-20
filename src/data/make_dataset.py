@@ -2,8 +2,8 @@
 
 用法:
     python -m src.data.make_dataset --config configs/default.yaml
-    python -m src.data.make_dataset --raw-dir data/raw/hvfhv \
-        --start 2024-01-01 --end 2025-01-01 \
+    python -m src.data.make_dataset --raw-dir data/raw \
+        --start 2023-01-01 --end 2023-02-01 \
         --out data/processed/demand_panel.parquet
 
 约定:
@@ -31,6 +31,7 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Build 15-min demand panel from HVFHV parquet.")
     p.add_argument("--config", default="configs/default.yaml")
     p.add_argument("--raw-dir", default=None)
+    p.add_argument("--raw-glob", default=None, help="默认读取 paths.raw_glob")
     p.add_argument("--out", default=None)
     p.add_argument("--start", default=None, help="闭区间起点，如 2024-01-01")
     p.add_argument("--end", default=None, help="开区间终点，如 2025-01-01")
@@ -45,6 +46,8 @@ def aggregate_file(path: Path, start: pd.Timestamp | None, end: pd.Timestamp | N
     df = pd.read_parquet(path, columns=[PICKUP_COL, ZONE_COL])
     df = df.rename(columns={ZONE_COL: "zone_id"})
     df["pickup_datetime"] = pd.to_datetime(df["pickup_datetime"], errors="coerce")
+    if df["pickup_datetime"].dt.tz is not None:
+        df["pickup_datetime"] = df["pickup_datetime"].dt.tz_localize(None)
     df = df.dropna(subset=["pickup_datetime", "zone_id"])
 
     if start is not None:
@@ -70,6 +73,7 @@ def main() -> None:
     dcfg = cfg.get("data", {})
 
     raw_dir = resolve(args.raw_dir or cfg["paths"]["raw_dir"])
+    raw_glob = args.raw_glob or cfg["paths"].get("raw_glob", "*.parquet")
     out_path = ensure_parent(args.out or cfg["paths"]["panel"])
     freq = args.freq or dcfg.get("freq", "15min")
     zone_min = args.zone_min or dcfg.get("zone_min", 1)
@@ -77,12 +81,12 @@ def main() -> None:
     start = pd.Timestamp(args.start) if args.start else (pd.Timestamp(dcfg["start"]) if dcfg.get("start") else None)
     end = pd.Timestamp(args.end) if args.end else (pd.Timestamp(dcfg["end"]) if dcfg.get("end") else None)
 
-    files = sorted(raw_dir.glob("*.parquet"))
+    files = sorted(raw_dir.glob(raw_glob))
     if not files:
         raise FileNotFoundError(
-            f"{raw_dir} 下没有 .parquet 文件。请先从 NYC TLC 下载 HVFHV 数据。"
+            f"{raw_dir} 下没有匹配 {raw_glob} 的文件。请先从 NYC TLC 下载 HVFHV 数据。"
         )
-    log.info("发现 %d 个原始文件，时间范围 [%s, %s)", len(files), start, end)
+    log.info("发现 %d 个原始文件（%s），时间范围 [%s, %s)", len(files), raw_glob, start, end)
 
     parts: list[pd.DataFrame] = []
     for i, f in enumerate(files, 1):
