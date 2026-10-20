@@ -23,7 +23,6 @@ data:
   freq: "15min"
   zone_min: 1
   zone_max: 263
-  drop_unknown_zones: true
 
 split:
   # 严格按时间顺序切分，禁止 shuffle / 随机划分
