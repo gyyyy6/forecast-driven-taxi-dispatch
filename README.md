@@ -152,6 +152,12 @@ streamlit run src/visualization/app.py
 - 大文件通过网盘 / 群文件共享，Git 仓库只放代码与文档。
 - 每次实验记录：数据时间范围、特征版本、超参数、随机种子、验证集指标。
 
+### 成员 B/C 任务书
+
+- [成员 B：SimPy 仿真与 Streamlit 看板](docs/tasks/member_b.md)
+- [成员 C：LightGBM 基线、消融与调参](docs/tasks/member_c.md)
+- [任务总览与接口契约](docs/tasks/README.md)
+
 ## 8. 十周里程碑（建议）
 
 | 周次 | 目标 |
