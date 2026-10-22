@@ -18,10 +18,10 @@ HVFHV 原始数据
 | 成员 | 硬件 | 主要职责 | 代码约束 |
 | --- | --- | --- | --- |
 | A（主机） | RTX 4060 8G + 16G RAM | 数据清洗、全量特征工程、STGCN/Graph WaveNet 训练 | `batch_size` 默认 16，可试 32；序列长度 12 |
-| B（副机） | GTX 1660 Ti 6G + 16G RAM | LightGBM 基线、消融实验、调参 | 默认 `batch_size=16`、`seq_len=12`；LightGBM 优先 CPU |
-| C（轻薄本） | Intel Ultra 5 集显 + 16G RAM | SimPy 仿真、调度策略、Streamlit 前端 | 只读小样本与预测结果 `.parquet`，不跑全量训练 |
+| B（轻薄本） | Intel Ultra 5 集显 + 16G RAM | SimPy 仿真、调度策略、Streamlit 前端 | 只读小样本与预测结果 `.parquet`，不跑全量训练 |
+| C（副机） | GTX 1660 Ti 6G + 16G RAM | LightGBM 基线、消融实验、调参 | 默认 `batch_size=16`、`seq_len=12`；LightGBM 优先 CPU |
 
-> 约定：深度学习训练只允许在 A 上进行；C 的机器不得加载全量面板。
+> 约定：深度学习训练只允许在 A 上进行；B 的机器不得加载全量面板。
 
 ## 2. 数据
 
