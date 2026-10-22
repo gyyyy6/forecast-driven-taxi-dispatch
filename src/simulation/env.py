@@ -35,6 +35,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--start", default=None)
     p.add_argument("--end", default=None)
     p.add_argument("--n-vehicles", type=int, default=None)
+    p.add_argument("--seed", type=int, default=None)
+    p.add_argument("--max-move-ratio", type=float, default=None)
+    p.add_argument("--min-demand-gain", type=float, default=None)
     p.add_argument("--out-dir", default=None)
     return p.parse_args()
 
@@ -273,6 +276,12 @@ def main() -> None:
         cfg["end"] = args.end
     if args.n_vehicles:
         cfg["n_vehicles"] = args.n_vehicles
+    if args.seed is not None:
+        cfg["seed"] = args.seed
+    if args.max_move_ratio is not None:
+        cfg["max_move_ratio"] = args.max_move_ratio
+    if args.min_demand_gain is not None:
+        cfg["min_demand_gain"] = args.min_demand_gain
 
     start = pd.Timestamp(cfg["start"])
     end = pd.Timestamp(cfg["end"])
@@ -302,7 +311,7 @@ def main() -> None:
     policies = ["greedy", "forecast"] if args.policy == "both" else [args.policy]
     all_records, summaries = [], []
     for name in policies:
-        policy = make_policy(name, float(cfg.get("max_wait_min", 30)))
+        policy = make_policy(name, **cfg)
         sim = DispatchSimulation(
             requests=requests,
             initial_zones=initial,
