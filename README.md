@@ -38,18 +38,19 @@ HVFHV 原始数据
 ```text
 data/raw/fhvhv_tripdata_2023-01.parquet
 data/raw/taxi_zone_lookup.csv
-data/raw/taxi_zones.shp  (+ .dbf/.shx/.prj)
+data/raw/taxi_zones/  (taxi_zones.shp + .dbf/.shx/.prj)
 ```
 
 > 默认配置对应 2023-01 单月数据，时间区间为 [2023-01-01, 2023-02-01)。
-> shapefile 需将 .shp/.dbf/.shx/.prj 放在同一目录；若解压到子目录，请同步修改 `paths.zone_shapefile`。
+> 当前配置指向 `data/raw/taxi_zones/taxi_zones.shp`；若文件放在其他位置，请修改 `paths.zone_shapefile`。
 
 > 质心文件需包含 `LocationID` + (`lat`,`lon`) 或 (`X`,`Y`)。若 TLC 只提供 shapefile，可用 geopandas 生成：
 >
 > ```python
 > import geopandas as gpd, pandas as pd
-> gdf = gpd.read_file("data/raw/taxi_zones.shp").to_crs(4326)
-> c = gdf.geometry.centroid
+> gdf = gpd.read_file("data/raw/taxi_zones/taxi_zones.shp")
+> c = gdf.to_crs(2263).geometry.centroid
+> c = gpd.GeoSeries(c, crs=2263).to_crs(4326)
 > pd.DataFrame({"LocationID": gdf["LocationID"], "lat": c.y, "lon": c.x}).to_csv(
 >     "data/raw/taxi_zone_centroids.csv", index=False
 > )

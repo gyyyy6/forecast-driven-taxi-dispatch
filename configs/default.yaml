@@ -8,7 +8,7 @@ paths:
   raw_dir: data/raw
   raw_glob: "fhvhv_tripdata_*.parquet"
   zone_lookup: data/raw/taxi_zone_lookup.csv
-  zone_shapefile: data/raw/taxi_zones.shp
+  zone_shapefile: data/raw/taxi_zones/taxi_zones.shp
   zone_centroids: data/raw/taxi_zone_centroids.csv
   panel: data/processed/demand_panel.parquet
   sample_day: data/processed/sample_day.parquet
