@@ -78,6 +78,11 @@ simulation:
   max_wait_min: 30
   dispatch_interval_min: 15
   seed: 42
+  # ---- 以下为新增键，缺省时由 policy.py 兜底 ----
+  policy: both              # greedy / forecast / both
+  max_move_ratio: 0.25      # 每时间片最多挪动多少比例的空闲车
+  min_demand_gain: 0.3      # 折算成车辆数后的缺口阈值
+  mean_pickup_min: 5.0      # 假设的平均接驾时间，用于估算单车周转（cycle）
 
 visualization:
   prediction_path: data/processed/predictions/pred_test.parquet
