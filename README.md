@@ -56,6 +56,8 @@ data/raw/taxi_zones/  (taxi_zones.shp + .dbf/.shx/.prj)
 > )
 > ```
 
+> 2023-01 数据下载、清洗结果、SHA256 校验和复现命令见 [`docs/data_status_2023-01.md`](docs/data_status_2023-01.md)。
+
 **`data/` 已被 `.gitignore` 忽略，任何数据、模型权重都不允许提交到 Git。**
 
 ## 3. 快速开始
