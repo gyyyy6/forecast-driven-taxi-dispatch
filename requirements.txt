@@ -18,6 +18,9 @@ plotly>=5.20
 folium>=0.16
 streamlit-folium>=0.20
 
+# ---- 地理数据（质心 / 地图）----
+geopandas>=0.14
+
 # ---- 分析 / 开发 ----
 matplotlib>=3.8
 jupyterlab>=4.1

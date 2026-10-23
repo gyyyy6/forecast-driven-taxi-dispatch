@@ -18,10 +18,10 @@ HVFHV 原始数据
 | 成员 | 硬件 | 主要职责 | 代码约束 |
 | --- | --- | --- | --- |
 | A（主机） | RTX 4060 8G + 16G RAM | 数据清洗、全量特征工程、STGCN/Graph WaveNet 训练 | `batch_size` 默认 16，可试 32；序列长度 12 |
-| B（副机） | GTX 1660 Ti 6G + 16G RAM | LightGBM 基线、消融实验、调参 | 默认 `batch_size=16`、`seq_len=12`；LightGBM 优先 CPU |
-| C（轻薄本） | Intel Ultra 5 集显 + 16G RAM | SimPy 仿真、调度策略、Streamlit 前端 | 只读小样本与预测结果 `.parquet`，不跑全量训练 |
+| B（轻薄本） | Intel Ultra 5 集显 + 16G RAM | SimPy 仿真、调度策略、Streamlit 前端 | 只读小样本与预测结果 `.parquet`，不跑全量训练 |
+| C（副机） | GTX 1660 Ti 6G + 16G RAM | LightGBM 基线、消融实验、调参 | 默认 `batch_size=16`、`seq_len=12`；LightGBM 优先 CPU |
 
-> 约定：深度学习训练只允许在 A 上进行；C 的机器不得加载全量面板。
+> 约定：深度学习训练只允许在 A 上进行；B 的机器不得加载全量面板。
 
 ## 2. 数据
 
@@ -38,22 +38,25 @@ HVFHV 原始数据
 ```text
 data/raw/fhvhv_tripdata_2023-01.parquet
 data/raw/taxi_zone_lookup.csv
-data/raw/taxi_zones.shp  (+ .dbf/.shx/.prj)
+data/raw/taxi_zones/  (taxi_zones.shp + .dbf/.shx/.prj)
 ```
 
 > 默认配置对应 2023-01 单月数据，时间区间为 [2023-01-01, 2023-02-01)。
-> shapefile 需将 .shp/.dbf/.shx/.prj 放在同一目录；若解压到子目录，请同步修改 `paths.zone_shapefile`。
+> 当前配置指向 `data/raw/taxi_zones/taxi_zones.shp`；若文件放在其他位置，请修改 `paths.zone_shapefile`。
 
 > 质心文件需包含 `LocationID` + (`lat`,`lon`) 或 (`X`,`Y`)。若 TLC 只提供 shapefile，可用 geopandas 生成：
 >
 > ```python
 > import geopandas as gpd, pandas as pd
-> gdf = gpd.read_file("data/raw/taxi_zones.shp").to_crs(4326)
-> c = gdf.geometry.centroid
+> gdf = gpd.read_file("data/raw/taxi_zones/taxi_zones.shp")
+> c = gdf.to_crs(2263).geometry.centroid
+> c = gpd.GeoSeries(c, crs=2263).to_crs(4326)
 > pd.DataFrame({"LocationID": gdf["LocationID"], "lat": c.y, "lon": c.x}).to_csv(
 >     "data/raw/taxi_zone_centroids.csv", index=False
 > )
 > ```
+
+> 2023-01 数据下载、清洗结果、SHA256 校验和复现命令见 [`docs/data_status_2023-01.md`](docs/data_status_2023-01.md)。
 
 **`data/` 已被 `.gitignore` 忽略，任何数据、模型权重都不允许提交到 Git。**
 
