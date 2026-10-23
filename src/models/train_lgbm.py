@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -118,6 +119,7 @@ def main() -> None:
         lgb.early_stopping(lcfg.get("early_stopping_rounds", 100), verbose=True),
         lgb.log_evaluation(period=100),
     ]
+    t0 = time.perf_counter()
     booster = lgb.train(
         params,
         dtrain,
@@ -126,8 +128,9 @@ def main() -> None:
         valid_names=["val"],
         callbacks=callbacks,
     )
+    train_seconds = time.perf_counter() - t0
     best_iter = int(booster.best_iteration or booster.current_iteration())
-    log.info("训练完成，best_iteration=%d", best_iter)
+    log.info("训练完成，best_iteration=%d，耗时 %.1f 秒", best_iter, train_seconds)
 
     tag = args.tag or datetime.now().strftime("%Y%m%d_%H%M%S")
     model_dir = resolve(cfg["paths"]["model_dir"])
@@ -156,9 +159,20 @@ def main() -> None:
         "tag": tag,
         "trained_at": datetime.now().isoformat(timespec="seconds"),
         "best_iteration": best_iter,
+        "train_seconds": round(float(train_seconds), 3),
         "n_features": len(feature_cols),
         "features": feature_cols,
         "params": params,
+        "rows": {
+            "train": int(train_mask.sum()),
+            "val": int(val_mask.sum()),
+            "test": int(test_mask.sum()),
+        },
+        "versions": {
+            "lightgbm": lgb.__version__,
+            "pandas": pd.__version__,
+            "numpy": np.__version__,
+        },
         "split": {"train_end": str(train_end), "val_end": str(val_end)},
         "metrics": metrics,
         "data": str(features_path),
