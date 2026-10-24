@@ -96,4 +96,4 @@ B 侧只需读取 `data/processed/predictions/pred_test.parquet`，字段与 `do
 1. **`lag_672` 暖机缺失**：前 7 天该特征为 NaN（全表 22.58%），训练集前一周的样本只能用其余特征；C3 做 `A2/A3` 对比时需说明样本量差异。
 2. **单月数据**：只有 31 天，无法评估跨月/节假日鲁棒性；结论只对 2023-01 成立。
 3. **误差集中在高需求区域**：Top 区域 `demand` 峰值 437，而预测峰值 386，高需求端被轻度低估；分区域/分时段误差分析留到 C5（`error_by_hour/zone`）。
-4. **下一步（C3）**：固定本配置与切分，按 `A0~A5` 特征组 + L1/L2 损失做消融，写入 `data/processed/experiments/lgbm_ablation.parquet` 与 `docs/experiments/lgbm_ablation.md`。
+4. **C3 已完成**：特征组与损失消融（A0~A7）见 [`lgbm_ablation.md`](lgbm_ablation.md) —— 结论是滞后特征贡献 99.2% 的提升，A1~A4 差异在噪声内，推荐 A2（15 特征 + L1）；A4 与本基线逐位一致，可作为本报告结果的交叉验证。
