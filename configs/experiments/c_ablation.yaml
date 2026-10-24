@@ -1,0 +1,83 @@
+project:
+  name: nyc-hvfhv-demand-dispatch
+  seed: 42
+
+# 成员 C / C3：特征组与损失函数消融（feature/c-ablation 分支）
+#
+# 特征只计算一次（复用 C2 的 data/processed/features.parquet），本配置在训练侧
+# 按列选取特征子集，因此 8 组实验的特征取值完全一致，唯一变量是“列集合 / 损失”。
+# feature_groups 与 data/processed/feature_list.json 的 18 个特征一一对应。
+paths:
+  panel: data/processed/demand_panel.parquet
+  features: data/processed/features.parquet
+  feature_list: data/processed/feature_list.json
+  out_dir: data/processed/experiments
+  prediction_dir: data/processed/experiments/predictions
+  model_dir: data/processed/experiments/models
+
+split:
+  # 与 C1/C2 相同：严格按时间 70/15/15，禁止随机划分
+  train: 0.70
+  val: 0.15
+  test: 0.15
+
+# 逐项复制 configs/experiments/c_baseline.yaml，唯一例外是 n_estimators：
+# A0~A3 在 2000 轮时 best_iteration 仍顶到上限（验证集 l1 还在缓慢下降），
+# 为了让 8 组拿到可比的训练预算，统一放宽到 6000 轮；早停 100 轮不变，
+# A4 仍会在约 1180 轮早停，因此仍需与 c_baseline.metrics.json 逐位一致。
+lgbm:
+  objective: regression_l1
+  metric: mae
+  n_estimators: 6000
+  learning_rate: 0.05
+  num_leaves: 63
+  min_child_samples: 50
+  subsample: 0.8
+  subsample_freq: 1
+  colsample_bytree: 0.8
+  reg_alpha: 0.0
+  reg_lambda: 1.0
+  n_jobs: -1
+  device: cpu
+  early_stopping_rounds: 100
+
+feature_groups:
+  zone: [zone_id]
+  calendar: [hour, minute, dow, is_weekend, is_holiday, hour_sin, hour_cos, dow_sin, dow_cos]
+  lag_short: [lag_1, lag_2, lag_4, lag_8]
+  lag_day: [lag_96]
+  lag_week: [lag_672]
+  rolling: [roll_mean_4, roll_mean_96]
+
+# 累积消融 A0→A4（A0 已含 zone_id，A1~A4 逐步累加），
+# 单项剥离 A6/A7 用来回答“完整模型里谁真正有用”。
+experiments:
+  - id: A0
+    groups: [zone, calendar]
+    note: 仅 zone_id + 日历
+  - id: A1
+    groups: [zone, calendar, lag_short]
+    note: A0 + lag_1/2/4/8
+  - id: A2
+    groups: [zone, calendar, lag_short, lag_day]
+    note: A1 + lag_96
+  - id: A3
+    groups: [zone, calendar, lag_short, lag_day, lag_week]
+    note: A2 + lag_672
+  - id: A4
+    groups: [zone, calendar, lag_short, lag_day, lag_week, rolling]
+    note: A3 + roll_mean_4/96（完整 18 特征，等价于 C2 基线）
+  - id: A5
+    groups: [zone, calendar, lag_short, lag_day, lag_week, rolling]
+    objective: regression_l2
+    note: 与 A4 完全同特征，仅把损失换成 L2
+  - id: A6
+    groups: [calendar, lag_short, lag_day, lag_week, rolling]
+    note: A4 去掉 zone_id（任务书可选组）
+  - id: A7
+    groups: [zone, lag_short, lag_day, lag_week, rolling]
+    note: A4 去掉日历（补充：量化日历特征贡献）
+
+output:
+  save_predictions: true    # 写 data/processed/experiments/predictions/，不覆盖 B 的 pred_test.parquet
+  save_models: false        # 8 个 .txt 模型约 60 MB，默认不留
