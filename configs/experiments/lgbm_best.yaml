@@ -1,0 +1,157 @@
+# =============================================================================
+# 成员 C / C4：LightGBM 最佳配置
+# 由 src/models/run_tuning.py 自动生成于 2026-10-26T13:29:18，请勿手工修改
+# 随机搜索：seed=42，共 18 组（1 锚点 + 17 随机），按 val WAPE 选择
+# 特征集：C3 推荐 A2（zone+calendar+lag_short+lag_day，15 个特征）
+# 训练预算：6000 轮 + 100 轮早停，metric=mae，CPU
+# =============================================================================
+project:
+  name: nyc-hvfhv-demand-dispatch
+  seed: 42
+  timezone: America/New_York
+paths:
+  raw_dir: data/raw
+  raw_glob: fhvhv_tripdata_*.parquet
+  zone_lookup: data/raw/taxi_zone_lookup.csv
+  zone_shapefile: data/raw/taxi_zones/taxi_zones.shp
+  zone_centroids: data/raw/taxi_zone_centroids.csv
+  panel: data/processed/demand_panel.parquet
+  sample_day: data/processed/sample_day.parquet
+  sample_month: data/processed/sample_month.parquet
+  features: data/processed/features.parquet
+  feature_list: data/processed/feature_list_best.json
+  adjacency: data/processed/adjacency.npz
+  model_dir: data/processed/models/c_best
+  prediction_dir: data/processed/predictions
+  simulation_dir: data/processed/simulation
+  log_dir: data/processed/logs
+data:
+  start: '2023-01-01'
+  end: '2023-02-01'
+  freq: 15min
+  zone_min: 1
+  zone_max: 263
+split:
+  train: 0.7
+  val: 0.15
+  test: 0.15
+features:
+  lags:
+  - 1
+  - 2
+  - 4
+  - 8
+  - 96
+  - 672
+  rolling_windows:
+  - 4
+  - 96
+  calendar:
+  - hour
+  - minute
+  - dow
+  - is_weekend
+  - is_holiday
+  cyclic: true
+  columns:
+  - zone_id
+  - lag_1
+  - lag_2
+  - lag_4
+  - lag_8
+  - lag_96
+  - hour
+  - minute
+  - dow
+  - is_weekend
+  - is_holiday
+  - hour_sin
+  - hour_cos
+  - dow_sin
+  - dow_cos
+lgbm:
+  objective: regression_l1
+  metric: mae
+  n_estimators: 6000
+  early_stopping_rounds: 100
+  learning_rate: 0.05
+  num_leaves: 127
+  min_child_samples: 100
+  colsample_bytree: 0.8
+  subsample: 1.0
+  subsample_freq: 1
+  reg_alpha: 0.0
+  reg_lambda: 0.0
+  n_jobs: -1
+  device: cpu
+stgnn:
+  seq_len: 12
+  pred_len: 1
+  batch_size: 16
+  hidden_channels: 32
+  epochs: 50
+  lr: 0.001
+  weight_decay: 0.0001
+  num_workers: 0
+  device: cuda
+  grad_clip: 5.0
+simulation:
+  start: 2023-01-31 00:00
+  end: 2023-01-31 06:00
+  n_vehicles: 200
+  speed_kmh: 25
+  service_time_min: 12
+  max_wait_min: 30
+  dispatch_interval_min: 15
+  seed: 42
+  policy: both
+  max_move_ratio: 0.25
+  min_demand_gain: 0.3
+  mean_pickup_min: 5.0
+visualization:
+  prediction_path: data/processed/predictions/pred_test.parquet
+  simulation_path: data/processed/simulation/scenarios/scenarios_summary.parquet
+search:
+  date: '2026-10-26'
+  seed: 42
+  n_trials: 18
+  selection: val WAPE -> val MAE -> trial_id
+  space:
+    learning_rate:
+    - 0.03
+    - 0.05
+    - 0.08
+    num_leaves:
+    - 31
+    - 63
+    - 127
+    min_child_samples:
+    - 20
+    - 50
+    - 100
+    colsample_bytree:
+    - 0.7
+    - 0.8
+    - 1.0
+    subsample:
+    - 0.7
+    - 0.8
+    - 1.0
+    reg_lambda:
+    - 0.0
+    - 1.0
+    - 5.0
+  best_trial: 11
+  feature_source:
+    config: configs/experiments/c_ablation.yaml
+    experiment_id: A2
+    feature_set: zone+calendar+lag_short+lag_day
+  best_val:
+    mae: 3.953133806549751
+    rmse: 6.6064469779841
+    wape: 0.1674681498948022
+    best_iteration: 2122
+  test:
+    mae: 4.029653961909626
+    rmse: 6.50342829336639
+    wape: 0.1573739292862507
