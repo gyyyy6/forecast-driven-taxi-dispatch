@@ -17,8 +17,8 @@ paths:
   feature_list: data/processed/feature_list.json
   # STGCN 多变量输入：[T, N, F]，DataLoader 组 batch 后为 [B, T, N, F]
   feature_tensor: data/processed/feature_tensor.npy
-  # 邻接矩阵：build_graph.py 输出，263×263，默认行归一化 + 自环
-  adjacency: data/processed/adj_matrix.npy
+  # 邻接矩阵：build_graph.py 输出，263×263
+  adjacency: data/processed/adjacency.npy
   model_dir: data/processed/models
   prediction_dir: data/processed/predictions
   simulation_dir: data/processed/simulation
@@ -33,7 +33,7 @@ data:
 
 graph:
   # centroid：质心 kNN 高斯核；od：历史订单共现；hybrid：两者加权
-  method: centroid
+  method: hybrid       # 修改这里：因为你要用 hybrid 融合 OD
   k: 8
   sigma: null          # null = 取 kNN 距离中位数
   normalize: row       # row | sym | none
@@ -77,9 +77,9 @@ lgbm:
 stgnn:
   seq_len: 12          # 3 小时历史
   pred_len: 1          # 预测未来 15 分钟
-  batch_size: 16       # 1660 Ti 6G 也安全；4060 可尝试 32
-  hidden_channels: 32
-  epochs: 50
+  batch_size: 32       # 4060 8G 实测可用；显存不足再退回 16
+  hidden_channels: 64
+  epochs: 100
   lr: 0.001
   weight_decay: 0.0001
   num_workers: 0       # Windows 下建议 0
@@ -100,7 +100,12 @@ simulation:
   max_wait_min: 30
   dispatch_interval_min: 15
   seed: 42
+  # ---- 成员 B 新增（缺省时由 policy.py 兜底）----
+  policy: both              # greedy / forecast / both
+  max_move_ratio: 0.25      # 每时间片最多挪动多少比例的空闲车
+  min_demand_gain: 0.3      # 折算成车辆数后的缺口阈值
+  mean_pickup_min: 5.0      # 估算单车周转用的平均接驾时间
 
 visualization:
   prediction_path: data/processed/predictions/pred_test.parquet
-  simulation_path: data/processed/simulation/sim_results.parquet
+  simulation_path: data/processed/simulation/scenarios/scenarios_summary.parquet

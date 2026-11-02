@@ -1,0 +1,42 @@
+{
+  "generated_at": "2026-10-22T03:23:57.524300+00:00",
+  "panel": "E:\\2026_2027\\MachineStudy\\data\\processed\\demand_panel.parquet",
+  "lags": [
+    1,
+    2,
+    4,
+    8,
+    96,
+    672
+  ],
+  "rolling_windows": [
+    4,
+    96
+  ],
+  "features": [
+    "zone_id",
+    "lag_1",
+    "lag_2",
+    "lag_4",
+    "lag_8",
+    "lag_96",
+    "lag_672",
+    "roll_mean_4",
+    "roll_mean_96",
+    "hour",
+    "minute",
+    "dow",
+    "is_weekend",
+    "is_holiday",
+    "hour_sin",
+    "hour_cos",
+    "dow_sin",
+    "dow_cos"
+  ],
+  "target": "demand",
+  "keys": [
+    "timestamp",
+    "zone_id"
+  ],
+  "n_rows": 782688
+}

@@ -53,6 +53,68 @@ def save_json(payload: dict, path: str | Path) -> None:
     p.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
 
 
+def save_training_curve(
+    history: list[dict],
+    path: str | Path,
+    title: str = "STGCN training",
+) -> Path | None:
+    """把训练历史画成 train loss / val MAE 双轴曲线（无显示器环境也可用）。"""
+    if not history:
+        return None
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception as exc:  # matplotlib 未安装时不影响训练
+        print(f"[warn] 无法绘制训练曲线: {exc}")
+        return None
+
+    epochs = [int(h["epoch"]) for h in history]
+    train_loss = [float(h.get("train_loss", np.nan)) for h in history]
+    val_mae = [float(h.get("val_mae_norm", np.nan)) for h in history]
+
+    fig, ax1 = plt.subplots(figsize=(8, 4.5), dpi=150)
+    ax1.plot(epochs, train_loss, color="#2563eb", linewidth=1.8, label="train loss")
+    ax1.set_xlabel("epoch")
+    from matplotlib.ticker import MaxNLocator
+    ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax1.set_ylabel("train loss (smooth L1, normalized)", color="#2563eb")
+    ax1.tick_params(axis="y", labelcolor="#2563eb")
+    ax1.grid(alpha=0.25)
+
+    ax2 = ax1.twinx()
+    ax2.plot(epochs, val_mae, color="#ea580c", linewidth=1.8, label="val MAE")
+    ax2.set_ylabel("val MAE (normalized)", color="#ea580c")
+    ax2.tick_params(axis="y", labelcolor="#ea580c")
+
+    best_idx = int(np.nanargmin(val_mae)) if np.isfinite(val_mae).any() else -1
+    if best_idx >= 0:
+        best_epoch = epochs[best_idx]
+        best_val = val_mae[best_idx]
+        ax2.axvline(best_epoch, color="#9ca3af", linestyle="--", linewidth=1.0)
+        ax2.scatter([best_epoch], [best_val], color="#ea580c", s=28, zorder=5)
+        span = max(epochs[-1] - epochs[0], 1)
+        near_right = best_epoch >= epochs[-1] - 0.15 * span
+        ax2.annotate(
+            f"best {best_val:.4f}",
+            (best_epoch, best_val),
+            textcoords="offset points",
+            xytext=(-58, 10) if near_right else (6, 8),
+            ha="right" if near_right else "left",
+            fontsize=8,
+            color="#9a3412",
+        )
+
+    ax1.set_title(title)
+    fig.tight_layout()
+
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(p, bbox_inches="tight")
+    plt.close(fig)
+    return p
+
+
 def make_prediction_frame(
     timestamp: pd.Series | np.ndarray,
     zone_id: pd.Series | np.ndarray,

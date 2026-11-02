@@ -1,0 +1,75 @@
+project:
+  name: nyc-hvfhv-demand-dispatch
+  seed: 42
+
+# 成员 C / C4：小规模超参数调优（feature/c-tuning 分支）
+#
+# 约束（见 docs/tasks/member_c.md C4）：
+#   - 特征集固定为 C3 推荐的 A2（15 个特征），通过引用消融配置解析，避免二次抄写；
+#   - 时间切分与 C1/C2/C3 完全一致（70/15/15，按时间）；
+#   - 只用验证集（WAPE/MAE）选择，测试集只在最佳组选出后评估一次。
+feature_source:
+  config: configs/experiments/c_ablation.yaml
+  experiment_id: A2
+
+paths:
+  panel: data/processed/demand_panel.parquet
+  features: data/processed/features.parquet
+  feature_list: data/processed/feature_list.json
+  # C4 最终模型用 A2 的 15 个特征，单独写一份清单供 lgbm_best.yaml 引用
+  feature_list_best: data/processed/feature_list_best.json
+  zone_lookup: data/raw/taxi_zone_lookup.csv
+  out_dir: data/processed/experiments
+  prediction_dir: data/processed/predictions
+  # 放在子目录，避免覆盖 C2 基线的 lgbm_latest.txt
+  model_dir: data/processed/models/c_best
+  log_dir: data/processed/logs
+
+data:
+  start: "2023-01-01"
+  end: "2023-02-01"
+  freq: "15min"
+  zone_min: 1
+  zone_max: 263
+
+split:
+  train: 0.70
+  val: 0.15
+  test: 0.15
+
+lgbm:
+  objective: regression_l1
+  metric: mae
+  # 与 C3 相同的训练预算：6000 轮上限 + 100 轮早停
+  n_estimators: 6000
+  early_stopping_rounds: 100
+  subsample_freq: 1
+  reg_alpha: 0.0
+  n_jobs: -1
+  device: cpu
+
+search:
+  # 18 组 = 1 个锚点（C2/C3 默认超参）+ 17 组随机采样（seed 42，去重）
+  n_trials: 18
+  seed: 42
+  selection: "val WAPE -> val MAE -> trial_id"
+  anchor:
+    learning_rate: 0.05
+    num_leaves: 63
+    min_child_samples: 50
+    colsample_bytree: 0.8
+    subsample: 0.8
+    reg_lambda: 1.0
+  # 搜索空间严格按任务书 C4
+  space:
+    learning_rate: [0.03, 0.05, 0.08]
+    num_leaves: [31, 63, 127]
+    min_child_samples: [20, 50, 100]
+    colsample_bytree: [0.7, 0.8, 1.0]
+    subsample: [0.7, 0.8, 1.0]
+    reg_lambda: [0.0, 1.0, 5.0]
+
+output:
+  save_predictions: true
+  # promote=true 时才会把最佳模型预测复制为 B 消费的 pred_test.parquet
+  promote: false

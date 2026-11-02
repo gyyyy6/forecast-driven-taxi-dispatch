@@ -5,3 +5,6 @@
 torch>=2.2
 # 可选：后续若改用 PyG 图卷积
 # torch-geometric>=2.5
+
+# 可选：训练监控。不装也能训练，加 --plot 即可输出 Loss 曲线 PNG。
+tensorboard>=2.16

@@ -62,41 +62,22 @@ def load_or_build_adjacency(
     centroids_path: str | Path,
     zones: np.ndarray,
 ) -> tuple[np.ndarray, str]:
-    """读取 .npy/.npz；不存在时用质心构建；最后兜底单位矩阵。"""
-    p = (
-        Path(adjacency_path)
-        if str(adjacency_path).strip()
-        else Path("data/processed/adj_matrix.npy")
-    )
-    if str(adjacency_path).strip() and p.is_file():
-        adj = _load_adjacency_file(p)
-        if adj.shape[0] != len(zones):
+    adjacency_path = Path(adjacency_path)
+    if adjacency_path.exists():
+        adj = _load_adjacency_file(adjacency_path)
+        if adj.shape != (len(zones), len(zones)):
             raise ValueError(
-                f"邻接矩阵维度 {adj.shape[0]} 与区域数 {len(zones)} 不一致: {p}"
+                f"邻接矩阵形状 {adj.shape} 与区域数 {len(zones)} 不符: {adjacency_path}"
             )
-        meta_path = p.with_suffix(".meta.json")
-        preprocessed = False
-        if meta_path.exists():
-            try:
-                meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                preprocessed = bool(meta.get("preprocessed", False))
-            except Exception:
-                preprocessed = False
-        if preprocessed:
-            return adj.astype(np.float32), f"loaded:{p}"
-        # 旧文件/无元信息：若行和已归一化则直接使用，否则补一次行归一化
-        row_sums = adj.sum(axis=1)
-        if np.allclose(row_sums, 1.0, atol=1e-3):
-            return adj.astype(np.float32), f"loaded:{p}"
-        return row_normalize(adj), f"loaded+renormalized:{p}"
+        return row_normalize(adj), f"loaded:{adjacency_path}"
 
     if Path(centroids_path).exists():
         adj = build_adjacency_from_centroids(centroids_path, zones)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        if p.suffix.lower() == ".npz":
-            np.savez_compressed(p, adjacency=adj, zones=zones)
+        adjacency_path.parent.mkdir(parents=True, exist_ok=True)
+        if adjacency_path.suffix.lower() == ".npy":
+            np.save(adjacency_path, adj, allow_pickle=False)
         else:
-            np.save(p.with_suffix(".npy"), adj, allow_pickle=False)
+            np.savez_compressed(adjacency_path, adjacency=adj, zones=zones)
         return adj, f"built_from_centroids:{centroids_path}"
 
     # 兜底：单位矩阵，等价于逐区域时间模型；仅用于先把流程跑通

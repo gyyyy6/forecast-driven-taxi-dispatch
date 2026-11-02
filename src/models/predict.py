@@ -1,6 +1,6 @@
 """统一推理入口：LightGBM / STGCN → 标准 prediction parquet。
 
-用法:
+用法::
     python -m src.models.predict --config configs/default.yaml --model lgbm --split test
     python -m src.models.predict --config configs/default.yaml --model stgnn --split test
 """
@@ -21,6 +21,7 @@ from src.models.stgnn import (
     STGCN,
     apply_scaler,
     inverse_scaler,
+    load_feature_tensor,
     load_zone_matrix,
     predict_matrix,
     split_indices,
@@ -77,6 +78,7 @@ def predict_stgnn(cfg: dict, split: str) -> pd.DataFrame:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
     mcfg = ckpt["config"]
+    in_features = int(mcfg.get("in_features", 1))
 
     model = STGCN(
         n_zones=mcfg["n_zones"],
@@ -85,6 +87,7 @@ def predict_stgnn(cfg: dict, split: str) -> pd.DataFrame:
         num_layers=mcfg["num_layers"],
         kernel_size=mcfg["kernel_size"],
         dropout=mcfg.get("dropout", 0.1),
+        in_features=in_features,
     ).to(device)
     model.load_state_dict(ckpt["state_dict"])
     model._adj = torch.from_numpy(ckpt["adjacency"].astype(np.float32)).to(device)  # type: ignore[attr-defined]
@@ -99,8 +102,30 @@ def predict_stgnn(cfg: dict, split: str) -> pd.DataFrame:
     if len(starts) == 0:
         raise ValueError("窗口数量为 0，请检查 seq_len 与数据长度")
 
-    normalized = apply_scaler(zm.values, ckpt["mean"], ckpt["std"])
-    preds = predict_matrix(model, normalized, starts, seq_len, batch_size=32, device=device, pred_len=pred_len)
+    if in_features > 1:
+        candidates = [mcfg.get("feature_tensor"), cfg["paths"].get("feature_tensor")]
+        feature_path = next(
+            (candidate for candidate in candidates if candidate and resolve(candidate).exists()),
+            None,
+        )
+        if not feature_path:
+            raise ValueError(
+                "checkpoint 需要多变量输入，但找不到 feature_tensor；"
+                "请确认 paths.feature_tensor 指向有效文件"
+            )
+        input_matrix, _ = load_feature_tensor(
+            resolve(feature_path), zones=zm.zones, timestamps=zm.timestamps
+        )
+        if input_matrix.shape[2] != in_features:
+            raise ValueError(
+                f"特征张量 F={input_matrix.shape[2]} 与 checkpoint in_features={in_features} 不一致"
+            )
+        log.info("stgnn 输入: feature tensor %s, shape=%s", feature_path, input_matrix.shape)
+    else:
+        input_matrix = apply_scaler(zm.values, ckpt["mean"], ckpt["std"])
+        log.info("stgnn 输入: demand, shape=%s", zm.values.shape)
+
+    preds = predict_matrix(model, input_matrix, starts, seq_len, batch_size=32, device=device, pred_len=pred_len)
     if pred_len != 1:
         raise ValueError("预测输出契约当前只支持 pred_len=1")
     pred_counts = inverse_scaler(preds[:, :, 0], ckpt["mean"], ckpt["std"])
