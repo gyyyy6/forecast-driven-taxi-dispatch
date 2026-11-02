@@ -15,7 +15,10 @@ paths:
   sample_month: data/processed/sample_month.parquet
   features: data/processed/features.parquet
   feature_list: data/processed/feature_list.json
-  adjacency: data/processed/adjacency.npz
+  # STGCN 多变量输入：[T, N, F]，DataLoader 组 batch 后为 [B, T, N, F]
+  feature_tensor: data/processed/feature_tensor.npy
+  # 邻接矩阵：build_graph.py 输出，263×263，默认行归一化 + 自环
+  adjacency: data/processed/adj_matrix.npy
   model_dir: data/processed/models
   prediction_dir: data/processed/predictions
   simulation_dir: data/processed/simulation
@@ -28,6 +31,16 @@ data:
   zone_min: 1
   zone_max: 263
 
+graph:
+  # centroid：质心 kNN 高斯核；od：历史订单共现；hybrid：两者加权
+  method: centroid
+  k: 8
+  sigma: null          # null = 取 kNN 距离中位数
+  normalize: row       # row | sym | none
+  add_self_loops: true
+  od_log1p: true       # OD 计数先 log1p，抑制枢纽区域量级碾压
+  hybrid_alpha: 0.5    # hybrid 中 OD 的权重
+
 split:
   # 严格按时间顺序切分，禁止 shuffle / 随机划分
   train: 0.70
@@ -39,6 +52,10 @@ features:
   rolling_windows: [4, 96]
   calendar: [hour, minute, dow, is_weekend, is_holiday]
   cyclic: true
+  # 是否额外导出 STGCN 使用的 [T, N, F] 张量
+  tensor: true
+  # 只用训练期统计量做标准化，避免泄漏
+  standardize: true
 
 lgbm:
   objective: regression_l1
@@ -68,6 +85,11 @@ stgnn:
   num_workers: 0       # Windows 下建议 0
   device: cuda
   grad_clip: 5.0
+  # 若 feature_tensor.npy 存在则默认使用多变量输入；可用 --no-features 关闭
+  use_features: true
+  # 可选监控：--tensorboard / --plot 覆盖以下开关
+  tensorboard: false
+  plot: false
 
 simulation:
   start: "2023-01-31 00:00"

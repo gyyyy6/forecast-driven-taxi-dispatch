@@ -1,15 +1,17 @@
 """轻量 STGCN（纯 PyTorch 实现，无需 PyG/DGL）。
 
 设计:
-    - 输入: 过去 T 个时间片、N 个区域的 demand 矩阵
-    - 图卷积: 使用稠密邻接矩阵 A（行归一化）聚合邻居
-    - 时间卷积: 沿时间轴的 1D 卷积
-    - 输出: 下一时间片（或未来 pred_len 个时间片）各区域需求
+    - 输入: ``[B, T, N, F]``。F=1 时等价于只输入历史 demand；
+      F>1 时可输入 build_features.py 导出的多变量特征张量。
+    - 图卷积: 使用稠密邻接矩阵 A（默认行归一化 + 自环）聚合邻居。
+    - 时间卷积: 沿时间轴的 1D 卷积。
+    - 输出: 下一时间片（或未来 pred_len 个时间片）各区域需求 ``[B, N, pred_len]``。
 
 稠密邻接 263×263 很小，单卡 6G/8G 均可轻松运行。
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,56 +22,39 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset
 
+from src.features.graph import (
+    build_centroid_adjacency,
+    row_normalize,
+)
+
 
 # ---------------------------------------------------------------------------
 # 图结构
 # ---------------------------------------------------------------------------
-def row_normalize(adj: np.ndarray, add_self_loops: bool = True) -> np.ndarray:
-    a = np.asarray(adj, dtype=np.float32).copy()
-    if a.ndim != 2 or a.shape[0] != a.shape[1]:
-        raise ValueError(f"邻接矩阵必须为方阵，当前 {a.shape}")
-    if add_self_loops:
-        np.fill_diagonal(a, 1.0)
-    # 只保留非负权重
-    a = np.clip(a, 0, None)
-    deg = a.sum(axis=1, keepdims=True)
-    deg[deg == 0] = 1.0
-    return (a / deg).astype(np.float32)
-
-
 def build_adjacency_from_centroids(
     centroids_path: str | Path, zones: np.ndarray, k: int = 8
 ) -> np.ndarray:
-    """用 Taxi Zone 质心构造 kNN 高斯核邻接矩阵。"""
-    from sklearn.neighbors import NearestNeighbors
+    """兼容旧接口：用 Taxi Zone 质心构造行归一化 kNN 高斯核邻接矩阵。"""
+    adj, _ = build_centroid_adjacency(
+        centroids_path, zones, k=k, normalize="row", add_self_loops=True
+    )
+    return adj
 
-    df = pd.read_csv(centroids_path)
-    lower = {c.lower(): c for c in df.columns}
-    id_col = lower.get("locationid") or lower.get("location_id") or lower.get("zone_id")
-    x_col = lower.get("x")
-    y_col = lower.get("y")
-    if id_col is None or x_col is None or y_col is None:
-        raise ValueError(
-            f"{centroids_path} 需包含 LocationID/X/Y 列，实际列: {list(df.columns)}"
-        )
-    df = df.set_index(id_col).reindex(zones)
-    if df[[x_col, y_col]].isna().any().any():
-        raise ValueError("质心文件缺少部分 Taxi Zone，无法构建邻接矩阵")
 
-    coords = df[[x_col, y_col]].to_numpy(np.float64)
-    n = len(coords)
-    k = min(k + 1, n)
-    nn = NearestNeighbors(n_neighbors=k).fit(coords)
-    dist, idx = nn.kneighbors(coords)
-    sigma = float(np.median(dist[:, 1:])) if k > 1 else 1.0
-    sigma = max(sigma, 1e-6)
-
-    adj = np.zeros((n, n), dtype=np.float32)
-    for i in range(n):
-        for j, d in zip(idx[i], dist[i]):
-            adj[i, j] = np.exp(-((d / sigma) ** 2))
-    adj = np.maximum(adj, adj.T)
-    return row_normalize(adj)
+def _load_adjacency_file(path: Path) -> np.ndarray:
+    """安全读取 .npy 或 .npz 文件。"""
+    data = np.load(path, allow_pickle=False)
+    # 区分 npz（有 files 属性）和 npy
+    if hasattr(data, "files"):  # npz
+        with data:
+            key = "adjacency" if "adjacency" in data.files else data.files[0]
+            arr = np.asarray(data[key], dtype=np.float32)
+    else:
+        arr = np.asarray(data, dtype=np.float32)
+        
+    if arr.ndim != 2 or arr.shape[0] != arr.shape[1]:
+        raise ValueError(f"邻接矩阵必须为方阵，{path} 实际 shape={arr.shape}")
+    return arr
 
 
 def load_or_build_adjacency(
@@ -77,16 +62,41 @@ def load_or_build_adjacency(
     centroids_path: str | Path,
     zones: np.ndarray,
 ) -> tuple[np.ndarray, str]:
-    adjacency_path = Path(adjacency_path)
-    if adjacency_path.exists():
-        data = np.load(adjacency_path)
-        key = "adjacency" if "adjacency" in data else list(data.keys())[0]
-        return row_normalize(data[key]), f"loaded:{adjacency_path}"
+    """读取 .npy/.npz；不存在时用质心构建；最后兜底单位矩阵。"""
+    p = (
+        Path(adjacency_path)
+        if str(adjacency_path).strip()
+        else Path("data/processed/adj_matrix.npy")
+    )
+    if str(adjacency_path).strip() and p.is_file():
+        adj = _load_adjacency_file(p)
+        if adj.shape[0] != len(zones):
+            raise ValueError(
+                f"邻接矩阵维度 {adj.shape[0]} 与区域数 {len(zones)} 不一致: {p}"
+            )
+        meta_path = p.with_suffix(".meta.json")
+        preprocessed = False
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                preprocessed = bool(meta.get("preprocessed", False))
+            except Exception:
+                preprocessed = False
+        if preprocessed:
+            return adj.astype(np.float32), f"loaded:{p}"
+        # 旧文件/无元信息：若行和已归一化则直接使用，否则补一次行归一化
+        row_sums = adj.sum(axis=1)
+        if np.allclose(row_sums, 1.0, atol=1e-3):
+            return adj.astype(np.float32), f"loaded:{p}"
+        return row_normalize(adj), f"loaded+renormalized:{p}"
 
     if Path(centroids_path).exists():
         adj = build_adjacency_from_centroids(centroids_path, zones)
-        adjacency_path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez_compressed(adjacency_path, adjacency=adj, zones=zones)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        if p.suffix.lower() == ".npz":
+            np.savez_compressed(p, adjacency=adj, zones=zones)
+        else:
+            np.save(p.with_suffix(".npy"), adj, allow_pickle=False)
         return adj, f"built_from_centroids:{centroids_path}"
 
     # 兜底：单位矩阵，等价于逐区域时间模型；仅用于先把流程跑通
@@ -115,6 +125,51 @@ def load_zone_matrix(panel_path: str | Path, zone_min: int = 1, zone_max: int = 
         .fillna(0.0)
     )
     return ZoneMatrix(timestamps=ts, zones=zones, values=wide.to_numpy(np.float32))
+
+
+def load_feature_tensor(
+    path: str | Path,
+    zones: np.ndarray | None = None,
+    timestamps: pd.DatetimeIndex | None = None,
+) -> tuple[np.ndarray, dict]:
+    """读取 ``[T, N, F]`` 特征张量，并校验与当前面板的节点/时间对齐。"""
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"特征张量不存在: {p}（请先运行 build_features.py）")
+    arr = np.load(p, allow_pickle=False)
+    if arr.ndim != 3:
+        raise ValueError(f"特征张量应为 [T, N, F]，实际 shape={arr.shape}")
+    arr = np.asarray(arr, dtype=np.float32)
+    if not np.isfinite(arr).all():
+        raise ValueError("特征张量包含 NaN/Inf，请重新运行 build_features.py")
+
+    meta_path = p.with_suffix(".meta.json")
+    meta: dict = {}
+    if meta_path.exists():
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+
+    if zones is not None:
+        z = np.asarray(zones, dtype=np.int64)
+        if arr.shape[1] != len(z):
+            raise ValueError(f"特征张量节点数 {arr.shape[1]} != {len(z)}")
+        meta_zones = meta.get("zones")
+        if meta_zones is not None and not np.array_equal(np.asarray(meta_zones, dtype=np.int64), z):
+            raise ValueError("特征张量的 zone 顺序与当前面板不一致，请重新运行 build_features.py")
+
+    if timestamps is not None:
+        ts = pd.DatetimeIndex(timestamps)
+        if arr.shape[0] != len(ts):
+            raise ValueError(
+                f"特征张量时间片数 {arr.shape[0]} != 面板 {len(ts)}；"
+                "请确认两者来自同一面板，或训练时加 --no-features"
+            )
+        meta_ts = meta.get("timestamps")
+        if meta_ts is not None:
+            parsed = pd.to_datetime(meta_ts)
+            if len(parsed) != len(ts) or not parsed.equals(ts):
+                raise ValueError("特征张量的时间戳与当前面板不一致，请重新运行 build_features.py")
+
+    return arr, meta
 
 
 def fit_scaler(values: np.ndarray, train_end_idx: int) -> tuple[np.ndarray, np.ndarray]:
@@ -156,7 +211,7 @@ def window_starts(
 
 
 class WindowDataset(Dataset):
-    """按索引惰性切片，避免把 12×263 的窗口全部物化到内存。"""
+    """仅 demand 输入：``__getitem__`` 返回 ``[T, N]``，batch 后为 ``[B, T, N]``。"""
 
     def __init__(self, matrix: np.ndarray, starts: np.ndarray, seq_len: int, pred_len: int):
         self.matrix = matrix
@@ -171,6 +226,39 @@ class WindowDataset(Dataset):
         s = int(self.starts[i])
         x = self.matrix[s : s + self.seq_len]
         y = self.matrix[s + self.seq_len : s + self.seq_len + self.pred_len]
+        return torch.from_numpy(x.copy()), torch.from_numpy(y.copy())
+
+
+class TensorWindowDataset(Dataset):
+    """多变量输入：返回 ``[T, N, F]``，DataLoader 组 batch 后为 ``[B, T, N, F]``。"""
+
+    def __init__(
+        self,
+        features: np.ndarray,
+        target: np.ndarray,
+        starts: np.ndarray,
+        seq_len: int,
+        pred_len: int,
+    ):
+        if features.ndim != 3:
+            raise ValueError(f"features 应为 [T, N, F]，实际 {features.shape}")
+        if target.ndim != 2:
+            raise ValueError(f"target 应为 [T, N]，实际 {target.shape}")
+        if features.shape[0] != target.shape[0] or features.shape[1] != target.shape[1]:
+            raise ValueError("features 与 target 的时间/节点维度不一致")
+        self.features = features
+        self.target = target
+        self.starts = starts
+        self.seq_len = seq_len
+        self.pred_len = pred_len
+
+    def __len__(self) -> int:
+        return len(self.starts)
+
+    def __getitem__(self, i: int):
+        s = int(self.starts[i])
+        x = self.features[s : s + self.seq_len]
+        y = self.target[s + self.seq_len : s + self.seq_len + self.pred_len]
         return torch.from_numpy(x.copy()), torch.from_numpy(y.copy())
 
 
@@ -218,27 +306,37 @@ class STGCN(nn.Module):
         num_layers: int = 2,
         kernel_size: int = 3,
         dropout: float = 0.1,
+        in_features: int = 1,
     ):
         super().__init__()
         self.pred_len = pred_len
-        self.input_proj = nn.Linear(1, hidden_channels)
+        self.in_features = int(in_features)
+        self.input_proj = nn.Linear(self.in_features, hidden_channels)
         self.blocks = nn.ModuleList(
             [
                 STBlock(
-                    hidden_channels if i == 0 else hidden_channels,
+                    hidden_channels,
                     hidden_channels,
                     kernel_size=kernel_size,
                     dropout=dropout,
                 )
-                for i in range(num_layers)
+                for _ in range(num_layers)
             ]
         )
         self.head = nn.Linear(hidden_channels, pred_len)
         self.n_zones = n_zones
 
     def forward(self, x: torch.Tensor, adj: torch.Tensor) -> torch.Tensor:
-        # x: [B, T, N] -> [B, T, N, 1]
-        h = self.input_proj(x.unsqueeze(-1))
+        # 兼容 [B,T,N] 与 [B,T,N,F]
+        if x.dim() == 3:
+            x = x.unsqueeze(-1)
+        elif x.dim() != 4:
+            raise ValueError(f"输入应为 [B,T,N] 或 [B,T,N,F]，实际 {tuple(x.shape)}")
+        if x.shape[-1] != self.in_features:
+            raise ValueError(
+                f"输入特征数 {x.shape[-1]} 与模型 in_features={self.in_features} 不一致"
+            )
+        h = self.input_proj(x)
         for block in self.blocks:
             h = block(h, adj)
         # 用最后一个时间片的表示预测未来
