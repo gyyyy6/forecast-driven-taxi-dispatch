@@ -16,9 +16,11 @@
 默认输出：
 
 ```text
-data/processed/adj_matrix.npy         # float32, (263, 263), 行归一化 + 自环
-data/processed/adj_matrix.meta.json   # 方法、参数、nnz、行和、对称性
+data/processed/adjacency.npy          # float32, (263, 263), 行归一化 + 自环
+data/processed/adjacency.meta.json    # 方法、参数、nnz、行和、对称性
 ```
+
+> 输出路径由 `paths.adjacency` 决定。重建后请确认 `*.meta.json` 里的 `method` 是你要的图，再用新的 `--tag` 重新训练，避免沿用旧 checkpoint 对比。
 
 常用参数：
 
@@ -36,7 +38,7 @@ python build_graph.py --method centroid --normalize sym --no-self-loops
 快速检查：
 
 ```powershell
-python -c "import numpy as np; a=np.load('data/processed/adj_matrix.npy'); print(a.shape, a.dtype, a.min(), a.max(), a.sum(1)[:5])"
+python -c "import numpy as np; a=np.load('data/processed/adjacency.npy'); print(a.shape, a.dtype, a.min(), a.max(), a.sum(1)[:5])"
 ```
 
 预期 `shape=(263, 263)`，行和约为 1（`--normalize row` 且加自环时）。

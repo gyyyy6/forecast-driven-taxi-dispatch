@@ -79,14 +79,28 @@ def load_or_build_adjacency(
 ) -> tuple[np.ndarray, str]:
     adjacency_path = Path(adjacency_path)
     if adjacency_path.exists():
-        data = np.load(adjacency_path)
-        key = "adjacency" if "adjacency" in data else list(data.keys())[0]
-        return row_normalize(data[key]), f"loaded:{adjacency_path}"
+        loaded = np.load(adjacency_path)
+        if isinstance(loaded, np.ndarray):
+            # .npy：build_graph.py 直接保存的稠密矩阵
+            adj = loaded
+        else:
+            # .npz：兼容旧产物，键名优先 adjacency
+            with loaded as data:
+                key = "adjacency" if "adjacency" in data.files else data.files[0]
+                adj = data[key]
+        if adj.shape != (len(zones), len(zones)):
+            raise ValueError(
+                f"邻接矩阵形状 {adj.shape} 与区域数 {len(zones)} 不符: {adjacency_path}"
+            )
+        return row_normalize(adj), f"loaded:{adjacency_path}"
 
     if Path(centroids_path).exists():
         adj = build_adjacency_from_centroids(centroids_path, zones)
         adjacency_path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez_compressed(adjacency_path, adjacency=adj, zones=zones)
+        if adjacency_path.suffix.lower() == ".npy":
+            np.save(adjacency_path, adj, allow_pickle=False)
+        else:
+            np.savez_compressed(adjacency_path, adjacency=adj, zones=zones)
         return adj, f"built_from_centroids:{centroids_path}"
 
     # 兜底：单位矩阵，等价于逐区域时间模型；仅用于先把流程跑通
